@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 # ─── Конфиг ────────────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN    = "8905009739:AAF5TsZre4WhAa1F4Uqdxu0J1qkZZVme_kc"
-ANTHROPIC_KEY     = "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"
+ANTHROPIC_KEY     = "ВСТАВЬ_СВОЙ_КЛЮЧ_СЮДА"
 API_FOOTBALL_KEY  = ""
-ADMIN_ID          = 5555668323  
-CHANNEL_USERNAME  = "@BetMindBot"  # username твоего канала
+ADMIN_ID          = 0  # Вставь свой Telegram ID (узнай у @userinfobot)
+CHANNEL_USERNAME  = "@твой_канал"  # username твоего канала
 
 PARTNER_LINKS = {
     "football": "https://1xbet.com/ru",
@@ -399,22 +399,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data in ("pay_week", "pay_month", "pay_year"):
         plan_key = query.data.replace("pay_", "")
         plan = PLANS[plan_key]
-        # Пока без ЮКасса — просто показываем инструкцию оплаты
         text = (
-            f"💳 *Оплата: {plan['name']} — {plan['price']}₽*\n\n"
-            f"Переведи *{plan['price']}₽* через СБП:\n"
-            f"📱 Номер: `+7XXXXXXXXXX`\n"
-            f"🏦 Банк: Сбербанк / Тинькофф\n\n"
-            f"В комментарии напиши свой *Telegram ID*\n"
-            f"(узнай его у @userinfobot)\n\n"
-            f"После оплаты нажми кнопку ниже 👇"
+            f"🔧 *Оплата временно недоступна*\n\n"
+            f"Система оплаты для тарифа *{plan['name']}* "
+            f"сейчас дорабатывается и скоро будет запущена.\n\n"
+            f"🔔 Напиши нам — оформим подписку вручную:\n"
+            f"👉 @statedge\\_support\n\n"
+            f"_Приносим извинения за неудобства!_"
         )
-        keyboard = [[
-            InlineKeyboardButton("✅ Я оплатил", callback_data=f"paid_{plan_key}")
-        ]]
         await query.message.reply_text(
-            text, parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            text, parse_mode=ParseMode.MARKDOWN
         )
 
     elif query.data.startswith("paid_"):
