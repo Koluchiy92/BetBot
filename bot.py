@@ -19,10 +19,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── Токены (берутся из переменных окружения) ──────────────────────────────────
-TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
-ANTHROPIC_KEY    = os.environ["ANTHROPIC_API_KEY"]
+TELEGRAM_TOKEN   = 8905009739:AAF5TsZre4WhAa1F4Uqdxu0J1qkZZVme_kc
+ANTHROPIC_KEY    = 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
 API_FOOTBALL_KEY = os.environ.get("API_FOOTBALL_KEY", "")   # опционально
-PARTNER_LINK     = os.environ.get("PARTNER_LINK", "https://1xbet.com/ru")
+PARTNER_LINK     = "https://1xbet.com/ru
+anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
 anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
