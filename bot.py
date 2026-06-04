@@ -23,7 +23,7 @@ TELEGRAM_TOKEN   = "8905009739:AAF5TsZre4WhAa1F4Uqdxu0J1qkZZVme_kc"
 ANTHROPIC_KEY    = "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"
 RAPIDAPI_KEY     = "b426a9b23emshf5d9fdea0b9a374p16a3d7jsn8b3284067281"
 ODDS_API_KEY     = "3ab1b568e1902702129ddc440ae41171"
-ADMIN_ID         = 5555668323 
+ADMIN_ID         = 5555668323       
 CHANNEL_USERNAME = "@твой_канал"
 
 PARTNER_LINKS = {
@@ -352,10 +352,11 @@ async def analyze_match(user_text: str, sport: str,
     if odds:  data_block += odds + "\n"
     if news:  data_block += news + "\n"
 
+    data_prefix = "Данные для анализа:\n" + data_block if data_block else "Используй актуальные знания о командах."
     msg = (
         f"Проанализируй матч: *{user_text}*\n\n"
         f"Вид спорта: {sport_context[sport]}\n\n"
-        f"{('Данные для анализа:\n' + data_block) if data_block else 'Используй актуальные знания о командах.'}\n\n"
+        f"{data_prefix}\n\n"
         f"Дай полный профессиональный разбор по всем пунктам."
     )
 
