@@ -25,6 +25,7 @@ ANTHROPIC_KEY     = "sk-ant-api03-AwJrqOA8Z1VI6FvwnrbyXC2N-IdC4uuvNaF8bfqXL8AxvX
 API_FOOTBALL_KEY  = ""
 ADMIN_ID          = 5555668323  
 CHANNEL_USERNAME  = "@твой_канал"  # username твоего канала
+ODDS_API_KEY      = "3ab1b568e1902702129ddc440ae41171"
 
 PARTNER_LINKS = {
     "football": "https://1xbet.com/ru",
