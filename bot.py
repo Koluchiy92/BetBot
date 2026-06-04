@@ -1,12 +1,11 @@
-import os
 import logging
 import sqlite3
+import json
 from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, PreCheckoutQueryHandler,
-    ContextTypes, filters
+    CallbackQueryHandler, ContextTypes, filters
 )
 from telegram.constants import ParseMode, ChatAction
 import anthropic
@@ -20,12 +19,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── Конфиг ────────────────────────────────────────────────────────────────────
-TELEGRAM_TOKEN    = "8905009739:AAF5TsZre4WhAa1F4Uqdxu0J1qkZZVme_kc"
-ANTHROPIC_KEY     = "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"
-API_FOOTBALL_KEY  = ""
-ADMIN_ID          = 5555668323  
-CHANNEL_USERNAME  = "@твой_канал"  # username твоего канала
-ODDS_API_KEY      = "3ab1b568e1902702129ddc440ae41171"
+TELEGRAM_TOKEN   = "8905009739:AAF5TsZre4WhAa1F4Uqdxu0J1qkZZVme_kc"
+ANTHROPIC_KEY    = "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"
+RAPIDAPI_KEY     = "b426a9b23emshf5d9fdea0b9a374p16a3d7jsn8b3284067281"
+ODDS_API_KEY     = "3ab1b568e1902702129ddc440ae41171"
+ADMIN_ID         = 5555668323 
+CHANNEL_USERNAME = "@твой_канал"
 
 PARTNER_LINKS = {
     "football": "https://1xbet.com/ru",
@@ -33,14 +32,13 @@ PARTNER_LINKS = {
     "dota":     "https://1xbet.com/ru",
 }
 
-# ─── Тарифы ────────────────────────────────────────────────────────────────────
 PLANS = {
     "week":  {"name": "🗓 Неделя",  "price": 199,  "days": 7,   "req_per_day": 10},
     "month": {"name": "📅 Месяц",   "price": 599,  "days": 30,  "req_per_day": 15},
     "year":  {"name": "🏆 Год",     "price": 4999, "days": 365, "req_per_day": 20},
 }
 
-FREE_LIMIT = 3  # бесплатных запросов всего
+FREE_LIMIT = 3
 
 anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
@@ -66,25 +64,15 @@ def init_db():
     conn.commit()
     conn.close()
 
-def get_user(uid: int):
+def ensure_user(uid, username, full_name):
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE user_id=?", (uid,))
-    row = c.fetchone()
-    conn.close()
-    return row
-
-def ensure_user(uid: int, username: str, full_name: str):
-    conn = sqlite3.connect("bot.db")
-    c = conn.cursor()
-    c.execute("""
-        INSERT OR IGNORE INTO users (user_id, username, full_name)
-        VALUES (?, ?, ?)
-    """, (uid, username, full_name))
+    c.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?,?,?)",
+              (uid, username, full_name))
     conn.commit()
     conn.close()
 
-def get_free_used(uid: int) -> int:
+def get_free_used(uid):
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute("SELECT free_used FROM users WHERE user_id=?", (uid,))
@@ -92,15 +80,14 @@ def get_free_used(uid: int) -> int:
     conn.close()
     return row[0] if row else 0
 
-def increment_free(uid: int):
+def increment_free(uid):
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute("UPDATE users SET free_used=free_used+1 WHERE user_id=?", (uid,))
     conn.commit()
     conn.close()
 
-def get_plan(uid: int):
-    """Возвращает (plan, plan_until) или (None, None)"""
+def get_plan(uid):
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute("SELECT plan, plan_until FROM users WHERE user_id=?", (uid,))
@@ -113,7 +100,7 @@ def get_plan(uid: int):
         return None, None
     return plan, until
 
-def set_plan(uid: int, plan: str):
+def set_plan(uid, plan):
     days = PLANS[plan]["days"]
     until = (datetime.now() + timedelta(days=days)).isoformat()
     conn = sqlite3.connect("bot.db")
@@ -122,8 +109,7 @@ def set_plan(uid: int, plan: str):
     conn.commit()
     conn.close()
 
-def check_day_limit(uid: int, plan: str) -> tuple[bool, int]:
-    """Возвращает (можно_делать_запрос, использовано_сегодня)"""
+def check_day_limit(uid, plan):
     today = datetime.now().strftime("%Y-%m-%d")
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
@@ -134,7 +120,6 @@ def check_day_limit(uid: int, plan: str) -> tuple[bool, int]:
         return True, 0
     day_used, last_day = row
     if last_day != today:
-        # Новый день — сброс
         conn = sqlite3.connect("bot.db")
         c = conn.cursor()
         c.execute("UPDATE users SET day_used=0, last_day=? WHERE user_id=?", (today, uid))
@@ -144,16 +129,13 @@ def check_day_limit(uid: int, plan: str) -> tuple[bool, int]:
     limit = PLANS[plan]["req_per_day"]
     return day_used < limit, day_used
 
-def increment_day(uid: int):
+def increment_day(uid):
     today = datetime.now().strftime("%Y-%m-%d")
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
-    c.execute("""
-        UPDATE users SET
-            day_used = CASE WHEN last_day=? THEN day_used+1 ELSE 1 END,
-            last_day = ?
-        WHERE user_id=?
-    """, (today, today, uid))
+    c.execute("""UPDATE users SET
+        day_used = CASE WHEN last_day=? THEN day_used+1 ELSE 1 END,
+        last_day = ? WHERE user_id=?""", (today, today, uid))
     conn.commit()
     conn.close()
 
@@ -168,117 +150,229 @@ def get_all_users():
 # ══════════════════════════════════════════════════════════════════════════════
 #  ОПРЕДЕЛЕНИЕ ВИДА СПОРТА
 # ══════════════════════════════════════════════════════════════════════════════
-def detect_sport(text: str) -> str:
+def detect_sport(text):
     t = text.lower()
-    cs2_words  = ["cs2", "cs 2", "counter-strike", "navi", "g2", "faze",
-                  "astralis", "vitality", "natus vincere", "hltv", "ксту"]
-    dota_words = ["dota", "дота", "team spirit", "tundra", "liquid",
-                  "nigma", "gaimin", "betboom", "virtus.pro"]
+    cs2_words  = ["cs2","cs 2","counter-strike","navi","g2 esports","faze",
+                  "astralis","vitality","natus vincere","hltv","mouz","heroic"]
+    dota_words = ["dota","дота","team spirit","tundra","liquid","nigma",
+                  "gaimin","betboom","virtus.pro","og dota","thunder awaken"]
     for w in cs2_words:
-        if w in t:
-            return "cs2"
+        if w in t: return "cs2"
     for w in dota_words:
-        if w in t:
-            return "dota"
+        if w in t: return "dota"
     return "football"
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  ФУТБОЛЬНАЯ СТАТИСТИКА
+#  СБОР ДАННЫХ — SOFASCORE (статистика команд)
 # ══════════════════════════════════════════════════════════════════════════════
-async def get_football_stats(team1: str, team2: str) -> str:
-    if not API_FOOTBALL_KEY:
-        return ""
+async def get_sofascore_stats(team1: str, team2: str) -> str:
+    """Ищем команды и получаем их последние матчи через Sofascore API"""
     try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            r1 = await client.get(
-                "https://v3.football.api-sports.io/teams",
-                params={"search": team1},
-                headers={"x-apisports-key": API_FOOTBALL_KEY}
-            )
-            r2 = await client.get(
-                "https://v3.football.api-sports.io/teams",
-                params={"search": team2},
-                headers={"x-apisports-key": API_FOOTBALL_KEY}
-            )
-            d1 = r1.json().get("response", [])
-            d2 = r2.json().get("response", [])
-            if not d1 or not d2:
-                return ""
-            tid1 = d1[0]["team"]["id"]
-            tid2 = d2[0]["team"]["id"]
+        async with httpx.AsyncClient(timeout=10) as client:
+            headers = {
+                "x-rapidapi-host": "sofascore.p.rapidapi.com",
+                "x-rapidapi-key": RAPIDAPI_KEY
+            }
 
-            async def last_matches(tid):
+            async def search_team(name):
                 r = await client.get(
-                    "https://v3.football.api-sports.io/fixtures",
-                    params={"team": tid, "last": 5, "status": "FT"},
-                    headers={"x-apisports-key": API_FOOTBALL_KEY}
+                    "https://sofascore.p.rapidapi.com/teams/search",
+                    params={"name": name},
+                    headers=headers
                 )
-                matches = r.json().get("response", [])
+                data = r.json()
+                teams = data.get("teams", [])
+                return teams[0] if teams else None
+
+            async def get_last_matches(team_id, team_name):
+                r = await client.get(
+                    f"https://sofascore.p.rapidapi.com/teams/{team_id}/events/last/0",
+                    headers=headers
+                )
+                data = r.json()
+                events = data.get("events", [])[:5]
                 results = []
-                for m in matches:
-                    home = m["teams"]["home"]
-                    away = m["teams"]["away"]
-                    g = m["goals"]
-                    w = "W" if (home["winner"] and home["id"]==tid) or \
-                               (away["winner"] and away["id"]==tid) else \
-                        "D" if not home["winner"] and not away["winner"] else "L"
-                    results.append(f"{home['name']} {g['home']}:{g['away']} {away['name']} [{w}]")
+                for e in events:
+                    home = e.get("homeTeam", {}).get("name", "?")
+                    away = e.get("awayTeam", {}).get("name", "?")
+                    hs = e.get("homeScore", {}).get("current", "?")
+                    as_ = e.get("awayScore", {}).get("current", "?")
+                    winner = e.get("winnerCode")
+                    if winner == 1:
+                        w = "П1"
+                    elif winner == 2:
+                        w = "П2"
+                    else:
+                        w = "Х"
+                    results.append(f"{home} {hs}:{as_} {away} [{w}]")
                 return results
 
-            last1 = await last_matches(tid1)
-            last2 = await last_matches(tid2)
-            return (f"Последние 5 матчей {team1}: {', '.join(last1)}\n"
-                    f"Последние 5 матчей {team2}: {', '.join(last2)}")
+            t1 = await search_team(team1)
+            t2 = await search_team(team2)
+
+            if not t1 or not t2:
+                return ""
+
+            last1 = await get_last_matches(t1["id"], team1)
+            last2 = await get_last_matches(t2["id"], team2)
+
+            # Рейтинги если есть
+            rating1 = t1.get("ranking", "")
+            rating2 = t2.get("ranking", "")
+
+            stats = f"📊 Статистика из Sofascore:\n"
+            stats += f"{team1} — последние 5: {' | '.join(last1)}\n"
+            stats += f"{team2} — последние 5: {' | '.join(last2)}\n"
+            if rating1:
+                stats += f"Рейтинг {team1}: #{rating1}\n"
+            if rating2:
+                stats += f"Рейтинг {team2}: #{rating2}\n"
+
+            return stats
+
     except Exception as e:
-        logger.warning(f"API-Football error: {e}")
+        logger.warning(f"Sofascore error: {e}")
         return ""
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  АНАЛИЗ ЧЕРЕЗ CLAUDE
+#  СБОР ДАННЫХ — THE ODDS API (коэффициенты)
 # ══════════════════════════════════════════════════════════════════════════════
-SYSTEM_PROMPT = """Ты — профессиональный спортивный аналитик и эксперт по ставкам.
+async def get_odds(team1: str, team2: str, sport: str) -> str:
+    """Получаем актуальные коэффициенты букмекеров"""
+    sport_key = {
+        "football": "soccer_epl",
+        "cs2": "esports_cs2",
+        "dota": "esports_dota2",
+    }.get(sport, "soccer_epl")
+
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            r = await client.get(
+                f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds",
+                params={
+                    "apiKey": ODDS_API_KEY,
+                    "regions": "eu",
+                    "markets": "h2h",
+                    "oddsFormat": "decimal"
+                }
+            )
+            events = r.json()
+            if not isinstance(events, list):
+                return ""
+
+            t1_lower = team1.lower()
+            t2_lower = team2.lower()
+
+            for event in events:
+                home = event.get("home_team", "").lower()
+                away = event.get("away_team", "").lower()
+                if (t1_lower in home or t1_lower in away or
+                    t2_lower in home or t2_lower in away):
+
+                    odds_info = f"\n💰 Коэффициенты букмекеров:\n"
+                    bookmakers = event.get("bookmakers", [])[:3]
+                    for bm in bookmakers:
+                        bm_name = bm.get("title", "")
+                        markets = bm.get("markets", [])
+                        for market in markets:
+                            if market.get("key") == "h2h":
+                                outcomes = market.get("outcomes", [])
+                                odds_str = " | ".join(
+                                    f"{o['name']}: {o['price']}" for o in outcomes
+                                )
+                                odds_info += f"  {bm_name}: {odds_str}\n"
+                    return odds_info
+
+            return ""
+    except Exception as e:
+        logger.warning(f"Odds API error: {e}")
+        return ""
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  СБОР ДАННЫХ — ВЕБ-ПОИСК НОВОСТЕЙ (через Claude web_search)
+# ══════════════════════════════════════════════════════════════════════════════
+async def get_news(team1: str, team2: str) -> str:
+    """Ищем свежие новости через Claude с web_search инструментом"""
+    try:
+        response = anthropic_client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=500,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Найди самые свежие новости про матч {team1} vs {team2}. "
+                    f"Ищи: травмы игроков, дисквалификации, заявления тренеров, "
+                    f"изменения состава, форму команд за последнюю неделю. "
+                    f"Дай краткую сводку на русском языке, только факты."
+                )
+            }]
+        )
+        # Собираем текст из всех блоков
+        result = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                result += block.text
+        return f"\n📰 Свежие новости:\n{result[:600]}" if result else ""
+    except Exception as e:
+        logger.warning(f"News search error: {e}")
+        return ""
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ПОЛНЫЙ АНАЛИЗ ЧЕРЕЗ CLAUDE
+# ══════════════════════════════════════════════════════════════════════════════
+SYSTEM_PROMPT = """Ты — топовый спортивный аналитик и эксперт по ставкам с 15-летним опытом.
 Анализируешь матчи по футболу (топ-лиги Европы, еврокубки), CS2 и Dota 2.
 
-Структура ответа:
-1. 📊 Краткий анализ обеих команд (форма, сильные/слабые стороны)
-2. 🔑 Ключевые факторы матча (травмы, мотивация, статистика)
-3. 🎯 Прогноз с чётким обоснованием
-4. 💡 Рекомендуемая ставка и примерный коэффициент
-5. 📈 Уровень уверенности в % (честно, не завышай выше 75% без весомых причин)
+У тебя есть реальные данные — используй их все.
 
-Стиль: экспертный, конкретный, без воды. Используй эмодзи для структуры.
-Форматируй через обычный Markdown Telegram (*жирный*, _курсив_).
-Никогда не давай гарантий. Всегда добавляй дисклеймер в конце.
+Структура анализа:
+1. 📊 *Статистика и форма* — разбор последних матчей, серии, тенденции
+2. 🔑 *Ключевые факторы* — травмы, дисквалификации, мотивация, усталость
+3. 💰 *Анализ коэффициентов* — где ценность, движение линии
+4. 📰 *Актуальные новости* — инсайды, заявления тренеров
+5. 🎯 *Прогноз* — конкретная ставка с чётким обоснованием
+6. 📈 *Уверенность* — честный процент (не завышай выше 75% без весомых причин)
+
+Стиль: экспертный, конкретный, с цифрами. Без воды.
+Форматируй через Telegram Markdown (*жирный*, _курсив_).
+Всегда добавляй дисклеймер в конце.
 Отвечай на русском языке."""
 
-async def analyze_match(user_text: str, sport: str, extra_stats: str = "") -> str:
+async def analyze_match(user_text: str, sport: str,
+                        stats: str = "", odds: str = "", news: str = "") -> str:
     sport_context = {
-        "football": "ФУТБОЛ. Анализируй форму команд, xG, очные встречи, травмы, мотивацию, турнирное положение.",
-        "cs2":      "CS2. Анализируй рейтинг HLTV, карточный пул, форму игроков, последние результаты на турнирах.",
-        "dota":     "DOTA 2. Анализируй винрейт команд, текущую мету, стиль игры, пик-фазу, последние результаты.",
+        "football": "ФУТБОЛ. Анализируй форму, xG, очные встречи, травмы, мотивацию, турнирное положение.",
+        "cs2":      "CS2. Анализируй рейтинг HLTV, карточный пул, форму игроков, последние турнирные результаты.",
+        "dota":     "DOTA 2. Анализируй винрейт, текущую мету, стиль игры, пик-фазу, последние результаты.",
     }
-    msg = f"""Проанализируй матч: {user_text}
 
-Вид спорта: {sport_context[sport]}
-{"Данные из API: " + extra_stats if extra_stats else "Используй актуальные знания о командах."}
+    data_block = ""
+    if stats: data_block += stats + "\n"
+    if odds:  data_block += odds + "\n"
+    if news:  data_block += news + "\n"
 
-Дай полный профессиональный разбор."""
+    msg = (
+        f"Проанализируй матч: *{user_text}*\n\n"
+        f"Вид спорта: {sport_context[sport]}\n\n"
+        f"{('Данные для анализа:\n' + data_block) if data_block else 'Используй актуальные знания о командах.'}\n\n"
+        f"Дай полный профессиональный разбор по всем пунктам."
+    )
 
     response = anthropic_client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=1000,
+        max_tokens=1200,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": msg}]
     )
     return response.content[0].text
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  ХЭНДЛЕРЫ
+#  HANDLERS — КОМАНДЫ
 # ══════════════════════════════════════════════════════════════════════════════
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ensure_user(user.id, user.username or "", user.full_name or "")
-
     plan, until = get_plan(user.id)
     free_used = get_free_used(user.id)
     free_left = max(0, FREE_LIMIT - free_used)
@@ -337,6 +431,126 @@ async def show_plans(message):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    try:
+        target_uid = int(context.args[0])
+        plan_key = context.args[1]
+        if plan_key not in PLANS:
+            await update.message.reply_text("Неверный план. Используй: week, month, year")
+            return
+        set_plan(target_uid, plan_key)
+        plan = PLANS[plan_key]
+        until = (datetime.now() + timedelta(days=plan["days"])).strftime("%d.%m.%Y")
+        await context.bot.send_message(
+            target_uid,
+            f"✅ *Подписка активирована!*\n\n"
+            f"📦 Тариф: *{plan['name']}*\n"
+            f"📅 Активна до: *{until}*\n"
+            f"📊 Лимит: *{plan['req_per_day']} анализов в день*\n\n"
+            f"Пиши любой матч — анализирую! ⚽🎮🐉",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        await update.message.reply_text(f"✅ Подписка {plan['name']} активирована для {target_uid}")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка: {e}\nИспользование: /activate USER_ID PLAN")
+
+async def cmd_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    users = get_all_users()
+    now = datetime.now()
+    total = len(users)
+    active = sum(1 for u in users if u[3] and u[4] and
+                 datetime.fromisoformat(u[4]) > now)
+    await update.message.reply_text(
+        f"📊 *Статистика бота:*\n\n"
+        f"👥 Всего пользователей: *{total}*\n"
+        f"✅ Активных подписок: *{active}*\n"
+        f"🆓 Без подписки: *{total - active}*",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def cmd_revenue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    users = get_all_users()
+    now = datetime.now()
+    counts = {"week": 0, "month": 0, "year": 0}
+    for u in users:
+        plan, until = u[3], u[4]
+        if plan and until and datetime.fromisoformat(until) > now:
+            if plan in counts:
+                counts[plan] += 1
+    revenue = sum(counts[p] * PLANS[p]["price"] for p in counts)
+    await update.message.reply_text(
+        f"💰 *Финансовая статистика:*\n\n"
+        f"🗓 Недельных: *{counts['week']}* → *{counts['week']*PLANS['week']['price']}₽*\n"
+        f"📅 Месячных: *{counts['month']}* → *{counts['month']*PLANS['month']['price']}₽*\n"
+        f"🏆 Годовых: *{counts['year']}* → *{counts['year']*PLANS['year']['price']}₽*\n\n"
+        f"💵 *Итого: {revenue}₽*",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not context.args:
+        await update.message.reply_text("Использование: /broadcast Текст сообщения")
+        return
+    text = " ".join(context.args)
+    users = get_all_users()
+    success = 0
+    failed = 0
+    status_msg = await update.message.reply_text(f"📤 Отправляю {len(users)} пользователям...")
+    for user in users:
+        try:
+            await context.bot.send_message(
+                user[0],
+                f"📢 *Сообщение от BetMind Bot:*\n\n{text}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            success += 1
+        except Exception:
+            failed += 1
+    await status_msg.edit_text(
+        f"✅ *Рассылка завершена*\n\n"
+        f"📨 Отправлено: *{success}*\n"
+        f"❌ Не доставлено: *{failed}*",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    users = get_all_users()
+    now = datetime.now()
+    lines = ["ID,Username,Имя,Тариф,Активен до,Статус"]
+    for u in users:
+        uid, username, name, plan, until = u
+        if plan and until and datetime.fromisoformat(until) > now:
+            status = "активен"
+            plan_name = PLANS[plan]["name"] if plan in PLANS else plan
+            until_str = datetime.fromisoformat(until).strftime("%d.%m.%Y")
+        else:
+            status = "нет подписки"
+            plan_name = "-"
+            until_str = "-"
+        lines.append(f"{uid},{username or '-'},{name or '-'},{plan_name},{until_str},{status}")
+    filename = f"/tmp/betmind_users_{now.strftime('%d%m%Y')}.csv"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    await context.bot.send_document(
+        update.effective_user.id,
+        document=open(filename, "rb"),
+        filename=f"betmind_users_{now.strftime('%d%m%Y')}.csv",
+        caption=f"📊 Пользователи BetMind Bot — {len(users)} чел."
+    )
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  CALLBACK HANDLER
+# ══════════════════════════════════════════════════════════════════════════════
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     uid = query.from_user.id
@@ -353,133 +567,75 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             until_str = datetime.fromisoformat(until).strftime("%d.%m.%Y")
             can, day_used = check_day_limit(uid, plan)
             day_limit = PLANS[plan]["req_per_day"]
-            plan_info = (
-                f"✅ Тариф: *{PLANS[plan]['name']}*\n"
-                f"📅 Активен до: *{until_str}*\n"
-                f"📊 Сегодня запросов: *{day_used}/{day_limit}*"
-            )
+            info = (f"✅ Тариф: *{PLANS[plan]['name']}*\n"
+                    f"📅 До: *{until_str}*\n"
+                    f"📊 Сегодня: *{day_used}/{day_limit}*")
         else:
-            plan_info = f"❌ Подписки нет\n🎁 Бесплатных осталось: *{free_left}*"
+            info = f"❌ Подписки нет\n🎁 Бесплатных: *{free_left}*"
         await query.message.reply_text(
-            f"📊 *Твой аккаунт:*\n\n{plan_info}",
-            parse_mode=ParseMode.MARKDOWN
+            f"📊 *Твой аккаунт:*\n\n{info}", parse_mode=ParseMode.MARKDOWN
         )
 
     elif query.data == "sub_bonus":
-        # Проверяем подписку на канал
         try:
             member = await context.bot.get_chat_member(CHANNEL_USERNAME, uid)
             if member.status in ("member", "administrator", "creator"):
-                # Уже подписан — даём бонус
-                conn = __import__("sqlite3").connect("bot.db")
+                conn = sqlite3.connect("bot.db")
                 c = conn.cursor()
                 c.execute("SELECT free_used FROM users WHERE user_id=?", (uid,))
                 row = c.fetchone()
                 if row and row[0] > 1:
                     c.execute("UPDATE users SET free_used=free_used-2 WHERE user_id=?", (uid,))
                     conn.commit()
-                    conn.close()
-                    await query.message.reply_text(
-                        "✅ *+2 анализа добавлено!*\n\nСпасибо за подписку на канал 🎉",
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-                else:
-                    conn.close()
-                    await query.message.reply_text("✅ Ты уже подписан! Бонус уже был начислен.")
+                conn.close()
+                await query.message.reply_text(
+                    "✅ *+2 анализа добавлено!* Спасибо за подписку 🎉",
+                    parse_mode=ParseMode.MARKDOWN
+                )
             else:
                 keyboard = [[InlineKeyboardButton(
-                    "📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME.strip('@')}"
+                    "📢 Подписаться", url=f"https://t.me/{CHANNEL_USERNAME.strip('@')}"
                 )]]
                 await query.message.reply_text(
-                    f"📢 Подпишись на канал *{CHANNEL_USERNAME}*\nи получи *+2 бесплатных анализа*!",
+                    f"Подпишись на *{CHANNEL_USERNAME}* и получи *+2 анализа* бесплатно!",
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
         except Exception:
-            await query.message.reply_text(
-                "Сначала укажи username канала в настройках бота."
-            )
+            await query.message.reply_text("Канал ещё не настроен. Скоро!")
 
     elif query.data in ("pay_week", "pay_month", "pay_year"):
         plan_key = query.data.replace("pay_", "")
         plan = PLANS[plan_key]
-        text = (
-            f"🔧 *Оплата временно недоступна*\n\n"
-            f"Система оплаты для тарифа *{plan['name']}* "
-            f"сейчас дорабатывается и скоро будет запущена.\n\n"
-            f"🔔 Напиши нам — оформим подписку вручную:\n"
-            f"👉 @statedge\\_support\n\n"
-            f"_Приносим извинения за неудобства!_"
-        )
         await query.message.reply_text(
-            text, parse_mode=ParseMode.MARKDOWN
+            f"🔧 *Оплата временно недоступна*\n\n"
+            f"Система оплаты для тарифа *{plan['name']}* дорабатывается.\n\n"
+            f"🔔 Напиши нам — оформим вручную:\n"
+            f"👉 @betmind\\_support",
+            parse_mode=ParseMode.MARKDOWN
         )
 
     elif query.data.startswith("paid_"):
         plan_key = query.data.replace("paid_", "")
         plan = PLANS[plan_key]
         user = query.from_user
-        # Уведомляем админа
         if ADMIN_ID:
             await context.bot.send_message(
                 ADMIN_ID,
                 f"💰 *Новая оплата!*\n\n"
                 f"👤 {user.full_name} (@{user.username})\n"
-                f"🆔 ID: `{user.id}`\n"
-                f"📦 Тариф: {plan['name']} — {plan['price']}₽\n\n"
+                f"🆔 `{user.id}`\n"
+                f"📦 {plan['name']} — {plan['price']}₽\n\n"
                 f"Активировать: /activate {user.id} {plan_key}",
                 parse_mode=ParseMode.MARKDOWN
             )
         await query.message.reply_text(
-            "⏳ *Заявка отправлена!*\n\n"
-            "Подписка будет активирована в течение 15 минут.\n"
-            "Ожидай сообщения от бота.",
-            parse_mode=ParseMode.MARKDOWN
+            "⏳ Заявка отправлена! Подписка активируется в течение 15 минут.",
         )
 
-async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда для админа: /activate USER_ID PLAN"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-    try:
-        target_uid = int(context.args[0])
-        plan_key = context.args[1]
-        if plan_key not in PLANS:
-            await update.message.reply_text("Неверный план. Используй: week, month, year")
-            return
-        set_plan(target_uid, plan_key)
-        plan = PLANS[plan_key]
-        until = (datetime.now() + timedelta(days=plan["days"])).strftime("%d.%m.%Y")
-        # Уведомляем пользователя
-        await context.bot.send_message(
-            target_uid,
-            f"✅ *Подписка активирована!*\n\n"
-            f"📦 Тариф: *{plan['name']}*\n"
-            f"📅 Активна до: *{until}*\n"
-            f"📊 Лимит: *{plan['req_per_day']} анализов в день*\n\n"
-            f"Пиши любой матч — анализирую! ⚽🎮🐉",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        await update.message.reply_text(f"✅ Подписка {plan['name']} активирована для {target_uid}")
-    except Exception as e:
-        await update.message.reply_text(f"Ошибка: {e}\nИспользование: /activate USER_ID PLAN")
-
-async def cmd_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Статистика пользователей для админа"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-    users = get_all_users()
-    total = len(users)
-    active = sum(1 for u in users if u[3] and u[4] and
-                 datetime.fromisoformat(u[4]) > datetime.now())
-    text = (
-        f"📊 *Статистика бота:*\n\n"
-        f"👥 Всего пользователей: *{total}*\n"
-        f"✅ Активных подписок: *{active}*\n"
-        f"🆓 Без подписки: *{total - active}*"
-    )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-
+# ══════════════════════════════════════════════════════════════════════════════
+#  ГЛАВНЫЙ ОБРАБОТЧИК СООБЩЕНИЙ
+# ══════════════════════════════════════════════════════════════════════════════
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     uid = user.id
@@ -488,29 +644,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(uid, user.username or "", user.full_name or "")
 
     if len(text) < 3:
-        await update.message.reply_text(
-            "Напиши матч, например: `Реал — Барса`",
-            parse_mode=ParseMode.MARKDOWN
-        )
+        await update.message.reply_text("Напиши матч, например: `Реал — Барса`",
+                                        parse_mode=ParseMode.MARKDOWN)
         return
 
-    # Проверяем подписку
     plan, until = get_plan(uid)
 
     if plan:
-        # Платный — проверяем дневной лимит
         can, day_used = check_day_limit(uid, plan)
         day_limit = PLANS[plan]["req_per_day"]
         if not can:
             await update.message.reply_text(
                 f"⛔ *Дневной лимит исчерпан*\n\n"
-                f"Использовано: *{day_used}/{day_limit}* анализов сегодня.\n"
-                f"Лимит обновится завтра в 00:00 🕛",
+                f"Использовано: *{day_used}/{day_limit}* сегодня.\n"
+                f"Обновится завтра в 00:00 🕛",
                 parse_mode=ParseMode.MARKDOWN
             )
             return
     else:
-        # Бесплатный
         free_used = get_free_used(uid)
         if free_used >= FREE_LIMIT:
             keyboard = [
@@ -518,28 +669,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🎁 +2 запроса бесплатно", callback_data="sub_bonus")],
             ]
             await update.message.reply_text(
-                f"⛔ *Бесплатный лимит исчерпан* ({FREE_LIMIT} анализа)\n\n"
-                f"Оформи подписку или получи +2 анализа бесплатно за подписку на канал:",
+                f"⛔ *Бесплатный лимит исчерпан*\n\n"
+                f"Оформи подписку или получи +2 анализа за подписку на канал:",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             return
 
-    # Анализируем
+    # Начинаем анализ
     await update.message.chat.send_action(ChatAction.TYPING)
-    wait_msg = await update.message.reply_text("🔍 Анализирую матч, подожди 15–20 секунд...")
+    wait_msg = await update.message.reply_text(
+        "🔍 Собираю данные...\n"
+        "📊 Статистика команд\n"
+        "💰 Коэффициенты букмекеров\n"
+        "📰 Свежие новости\n\n"
+        "_Подожди 25–40 секунд_ ⏳",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
     sport = detect_sport(text)
     sport_emoji = {"football": "⚽", "cs2": "🎮", "dota": "🐉"}[sport]
 
-    extra_stats = ""
-    if sport == "football" and API_FOOTBALL_KEY:
-        parts = text.replace(" vs ", " — ").replace(" - ", " — ").split(" — ")
-        if len(parts) == 2:
-            extra_stats = await get_football_stats(parts[0].strip(), parts[1].strip())
+    # Парсим команды
+    parts = text.replace(" vs ", " — ").replace(" - ", " — ").split(" — ")
+    team1 = parts[0].strip() if len(parts) >= 2 else text
+    team2 = parts[1].strip() if len(parts) >= 2 else ""
+
+    # Параллельно собираем все данные
+    import asyncio
+    stats, odds, news = await asyncio.gather(
+        get_sofascore_stats(team1, team2) if team2 else asyncio.coroutine(lambda: "")(),
+        get_odds(team1, team2, sport) if team2 else asyncio.coroutine(lambda: "")(),
+        get_news(team1, team2)
+    )
 
     try:
-        analysis = await analyze_match(text, sport, extra_stats)
+        analysis = await analyze_match(text, sport, stats, odds, news)
 
         # Обновляем счётчики
         if plan:
@@ -552,16 +717,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             free_used = get_free_used(uid)
             free_left = max(0, FREE_LIMIT - free_used)
             counter_info = (
-                f"_🎁 Осталось бесплатных: {free_left}_"
-                if free_left > 0 else
-                "_🔴 Это был последний бесплатный анализ. Оформи подписку!_"
+                f"_🎁 Осталось бесплатных: {free_left}_" if free_left > 0
+                else "_🔴 Последний бесплатный анализ. Оформи подписку!_"
             )
 
-        partner_url = PARTNER_LINKS[sport]
         keyboard = [[
             InlineKeyboardButton(
                 "💰 Сделать ставку" if sport == "football" else "🎯 Поставить на победителя",
-                url=partner_url
+                url=PARTNER_LINKS[sport]
             )
         ]]
         if not plan:
@@ -587,122 +750,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Ошибка при анализе. Попробуй ещё раз или напиши матч по-другому."
         )
 
-async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Рассылка всем пользователям: /broadcast Текст сообщения"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if not context.args:
-        await update.message.reply_text(
-            "Использование: /broadcast Текст сообщения\n\n"
-            "Пример: /broadcast 🔥 Новая функция в боте — теперь анализируем хоккей!"
-        )
-        return
-
-    text = " ".join(context.args)
-    users = get_all_users()
-    total = len(users)
-    success = 0
-    failed = 0
-
-    status_msg = await update.message.reply_text(f"📤 Отправляю рассылку {total} пользователям...")
-
-    for user in users:
-        uid = user[0]
-        try:
-            await context.bot.send_message(
-                uid,
-                f"📢 *Сообщение от BetMind Bot:*\n\n{text}",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            success += 1
-        except Exception:
-            failed += 1
-
-    await status_msg.edit_text(
-        f"✅ *Рассылка завершена*\n\n"
-        f"📨 Отправлено: *{success}*\n"
-        f"❌ Не доставлено: *{failed}* (заблокировали бота)\n"
-        f"👥 Всего: *{total}*",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
-async def cmd_revenue(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подсчёт выручки: /revenue"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-    users = get_all_users()
-    now = datetime.now()
-
-    active_week  = 0
-    active_month = 0
-    active_year  = 0
-
-    for user in users:
-        plan, until = user[3], user[4]
-        if not plan or not until:
-            continue
-        if datetime.fromisoformat(until) < now:
-            continue
-        if plan == "week":
-            active_week += 1
-        elif plan == "month":
-            active_month += 1
-        elif plan == "year":
-            active_year += 1
-
-    revenue_week  = active_week  * PLANS["week"]["price"]
-    revenue_month = active_month * PLANS["month"]["price"]
-    revenue_year  = active_year  * PLANS["year"]["price"]
-    total_revenue = revenue_week + revenue_month + revenue_year
-
-    total_users  = len(users)
-    active_total = active_week + active_month + active_year
-
-    text = (
-        f"💰 *Финансовая статистика:*\n\n"
-        f"👥 Всего пользователей: *{total_users}*\n"
-        f"✅ Активных подписок: *{active_total}*\n\n"
-        f"🗓 Недельных ({PLANS['week']['price']}₽): *{active_week}* → *{revenue_week}₽*\n"
-        f"📅 Месячных ({PLANS['month']['price']}₽): *{active_month}* → *{revenue_month}₽*\n"
-        f"🏆 Годовых ({PLANS['year']['price']}₽): *{active_year}* → *{revenue_year}₽*\n\n"
-        f"💵 *Итого выручка: {total_revenue}₽*"
-    )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
-
-async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Экспорт пользователей в CSV: /export"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-    users = get_all_users()
-    now = datetime.now()
-
-    lines = ["ID,Username,Имя,Тариф,Активен до,Статус"]
-    for user in users:
-        uid, username, name, plan, until = user
-        if plan and until and datetime.fromisoformat(until) > now:
-            status = "активен"
-            plan_name = PLANS[plan]["name"] if plan in PLANS else plan
-            until_str = datetime.fromisoformat(until).strftime("%d.%m.%Y")
-        else:
-            status = "нет подписки"
-            plan_name = "-"
-            until_str = "-"
-        lines.append(f"{uid},{username or '-'},{name or '-'},{plan_name},{until_str},{status}")
-
-    csv_text = "\n".join(lines)
-    filename = f"betmind_users_{now.strftime('%d%m%Y')}.csv"
-
-    # Сохраняем файл временно
-    with open(f"/tmp/{filename}", "w", encoding="utf-8") as f:
-        f.write(csv_text)
-
-    await context.bot.send_document(
-        update.effective_user.id,
-        document=open(f"/tmp/{filename}", "rb"),
-        filename=filename,
-        caption=f"📊 Экспорт пользователей BetMind Bot\n👥 Всего: {len(users)} чел."
-    )
-
 # ══════════════════════════════════════════════════════════════════════════════
 #  ЗАПУСК
 # ══════════════════════════════════════════════════════════════════════════════
@@ -714,8 +761,8 @@ def main():
     app.add_handler(CommandHandler("subscribe",  cmd_subscribe))
     app.add_handler(CommandHandler("activate",   cmd_activate))
     app.add_handler(CommandHandler("users",      cmd_users))
-    app.add_handler(CommandHandler("broadcast",  cmd_broadcast))
     app.add_handler(CommandHandler("revenue",    cmd_revenue))
+    app.add_handler(CommandHandler("broadcast",  cmd_broadcast))
     app.add_handler(CommandHandler("export",     cmd_export))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
