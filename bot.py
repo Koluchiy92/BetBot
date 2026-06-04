@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # ─── Конфиг ────────────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN   = "8905009739:AAHFrzaclAtv0wEQ2x3kxn646bwCMLzimDQ"
-ANTHROPIC_KEY    = "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"
+ANTHROPIC_KEY    = "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"
 RAPIDAPI_KEY     = "b426a9b23emshf5d9fdea0b9a374p16a3d7jsn8b3284067281"
 ODDS_API_KEY     = "3ab1b568e1902702129ddc440ae41171"
 YOKASSA_SHOP_ID  = "1374959"
