@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 # ─── Конфиг ────────────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN    = "8905009739:AAF5TsZre4WhAa1F4Uqdxu0J1qkZZVme_kc"
-ANTHROPIC_KEY     = "ВСТАВЬ_СВОЙ_КЛЮЧ_СЮДА"
+ANTHROPIC_KEY     = "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"
 API_FOOTBALL_KEY  = ""
-ADMIN_ID          = 0  # Вставь свой Telegram ID (узнай у @userinfobot)
-CHANNEL_USERNAME  = "@твой_канал"  # username твоего канала
+ADMIN_ID          = 5555668323  
+CHANNEL_USERNAME  = "@BetMindBot"  # username твоего канала
 
 PARTNER_LINKS = {
     "football": "https://1xbet.com/ru",
