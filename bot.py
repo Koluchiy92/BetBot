@@ -22,7 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── Конфиг ────────────────────────────────────────────────────────────────────
-TELEGRAM_TOKEN   = "8905009739:AAF5TsZre4WhAa1F4Uqdxu0J1qkZZVme_kc"
+TELEGRAM_TOKEN   = "8905009739:AAHFrzaclAtv0wEQ2x3kxn646bwCMLzimDQ"
 ANTHROPIC_KEY    = "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"
 RAPIDAPI_KEY     = "b426a9b23emshf5d9fdea0b9a374p16a3d7jsn8b3284067281"
 ODDS_API_KEY     = "3ab1b568e1902702129ddc440ae41171"
