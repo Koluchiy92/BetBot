@@ -22,13 +22,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── Конфиг ────────────────────────────────────────────────────────────────────
-TELEGRAM_TOKEN   = "8905009739:AAHFrzaclAtv0wEQ2x3kxn646bwCMLzimDQ"
-ANTHROPIC_KEY    = "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"
-RAPIDAPI_KEY     = "b426a9b23emshf5d9fdea0b9a374p16a3d7jsn8b3284067281"
-ODDS_API_KEY     = "3ab1b568e1902702129ddc440ae41171"
-YOKASSA_SHOP_ID  = "1374959"
-YOKASSA_KEY      = "live_FIT674uysl3obYqOQnjzusYHW5QH_tsLXv2ya6OFVaA"
-ADMIN_ID         = 0       # Вставь свой Telegram ID (узнай у @userinfobot)
+import os
+TELEGRAM_TOKEN   = os.environ["TELEGRAM_TOKEN"]
+ANTHROPIC_KEY    = os.environ["ANTHROPIC_API_KEY"]
+RAPIDAPI_KEY     = os.environ["RAPIDAPI_KEY"]
+ODDS_API_KEY     = os.environ["ODDS_API_KEY"]
+YOKASSA_SHOP_ID  = os.environ["YOKASSA_SHOP_ID"]
+YOKASSA_KEY      = os.environ["YOKASSA_KEY"]
+ADMIN_ID         = 5555668323      
 CHANNEL_USERNAME = "@твой_канал"
 WEBHOOK_URL      = "https://betbot-production-1cb7.up.railway.app"
 
