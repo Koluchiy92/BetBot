@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN    = "8905009739:AAF5TsZre4WhAa1F4Uqdxu0J1qkZZVme_kc"
 ANTHROPIC_KEY     = "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"
 API_FOOTBALL_KEY  = ""
-ADMIN_ID          = 5555668323  
-CHANNEL_USERNAME  = "@BetMindBot"  # username твоего канала
+ADMIN_ID          = 5555668323 
+CHANNEL_USERNAME  = "@твой_канал"  # username твоего канала
 
 PARTNER_LINKS = {
     "football": "https://1xbet.com/ru",
@@ -290,7 +290,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (
         f"👋 Привет, *{user.first_name}*!\n\n"
-        f"🤖 Я — *StatEdge Bot*\n"
+        f"🤖 Я — *BetMind Bot*\n"
         f"Профессиональный анализ матчей с прогнозами.\n\n"
         f"🔧 *Бот находится в разработке*\n"
         f"Запуск со дня на день — следи за обновлениями!\n\n"
@@ -600,7 +600,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("StatEdge Bot запущен")
+    logger.info("BetMind Bot запущен")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
