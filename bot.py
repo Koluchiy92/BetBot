@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN    = "8905009739:AAF5TsZre4WhAa1F4Uqdxu0J1qkZZVme_kc"
 ANTHROPIC_KEY     = "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"
 API_FOOTBALL_KEY  = ""
-ADMIN_ID          = 5555668323 
+ADMIN_ID          = 5555668323  
 CHANNEL_USERNAME  = "@твой_канал"  # username твоего канала
 
 PARTNER_LINKS = {
@@ -586,6 +586,122 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Ошибка при анализе. Попробуй ещё раз или напиши матч по-другому."
         )
 
+async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Рассылка всем пользователям: /broadcast Текст сообщения"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not context.args:
+        await update.message.reply_text(
+            "Использование: /broadcast Текст сообщения\n\n"
+            "Пример: /broadcast 🔥 Новая функция в боте — теперь анализируем хоккей!"
+        )
+        return
+
+    text = " ".join(context.args)
+    users = get_all_users()
+    total = len(users)
+    success = 0
+    failed = 0
+
+    status_msg = await update.message.reply_text(f"📤 Отправляю рассылку {total} пользователям...")
+
+    for user in users:
+        uid = user[0]
+        try:
+            await context.bot.send_message(
+                uid,
+                f"📢 *Сообщение от BetMind Bot:*\n\n{text}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            success += 1
+        except Exception:
+            failed += 1
+
+    await status_msg.edit_text(
+        f"✅ *Рассылка завершена*\n\n"
+        f"📨 Отправлено: *{success}*\n"
+        f"❌ Не доставлено: *{failed}* (заблокировали бота)\n"
+        f"👥 Всего: *{total}*",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def cmd_revenue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Подсчёт выручки: /revenue"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    users = get_all_users()
+    now = datetime.now()
+
+    active_week  = 0
+    active_month = 0
+    active_year  = 0
+
+    for user in users:
+        plan, until = user[3], user[4]
+        if not plan or not until:
+            continue
+        if datetime.fromisoformat(until) < now:
+            continue
+        if plan == "week":
+            active_week += 1
+        elif plan == "month":
+            active_month += 1
+        elif plan == "year":
+            active_year += 1
+
+    revenue_week  = active_week  * PLANS["week"]["price"]
+    revenue_month = active_month * PLANS["month"]["price"]
+    revenue_year  = active_year  * PLANS["year"]["price"]
+    total_revenue = revenue_week + revenue_month + revenue_year
+
+    total_users  = len(users)
+    active_total = active_week + active_month + active_year
+
+    text = (
+        f"💰 *Финансовая статистика:*\n\n"
+        f"👥 Всего пользователей: *{total_users}*\n"
+        f"✅ Активных подписок: *{active_total}*\n\n"
+        f"🗓 Недельных ({PLANS['week']['price']}₽): *{active_week}* → *{revenue_week}₽*\n"
+        f"📅 Месячных ({PLANS['month']['price']}₽): *{active_month}* → *{revenue_month}₽*\n"
+        f"🏆 Годовых ({PLANS['year']['price']}₽): *{active_year}* → *{revenue_year}₽*\n\n"
+        f"💵 *Итого выручка: {total_revenue}₽*"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Экспорт пользователей в CSV: /export"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    users = get_all_users()
+    now = datetime.now()
+
+    lines = ["ID,Username,Имя,Тариф,Активен до,Статус"]
+    for user in users:
+        uid, username, name, plan, until = user
+        if plan and until and datetime.fromisoformat(until) > now:
+            status = "активен"
+            plan_name = PLANS[plan]["name"] if plan in PLANS else plan
+            until_str = datetime.fromisoformat(until).strftime("%d.%m.%Y")
+        else:
+            status = "нет подписки"
+            plan_name = "-"
+            until_str = "-"
+        lines.append(f"{uid},{username or '-'},{name or '-'},{plan_name},{until_str},{status}")
+
+    csv_text = "\n".join(lines)
+    filename = f"betmind_users_{now.strftime('%d%m%Y')}.csv"
+
+    # Сохраняем файл временно
+    with open(f"/tmp/{filename}", "w", encoding="utf-8") as f:
+        f.write(csv_text)
+
+    await context.bot.send_document(
+        update.effective_user.id,
+        document=open(f"/tmp/{filename}", "rb"),
+        filename=filename,
+        caption=f"📊 Экспорт пользователей BetMind Bot\n👥 Всего: {len(users)} чел."
+    )
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  ЗАПУСК
 # ══════════════════════════════════════════════════════════════════════════════
@@ -593,10 +709,13 @@ def main():
     init_db()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    app.add_handler(CommandHandler("start",     cmd_start))
-    app.add_handler(CommandHandler("subscribe", cmd_subscribe))
-    app.add_handler(CommandHandler("activate",  cmd_activate))
-    app.add_handler(CommandHandler("users",     cmd_users))
+    app.add_handler(CommandHandler("start",      cmd_start))
+    app.add_handler(CommandHandler("subscribe",  cmd_subscribe))
+    app.add_handler(CommandHandler("activate",   cmd_activate))
+    app.add_handler(CommandHandler("users",      cmd_users))
+    app.add_handler(CommandHandler("broadcast",  cmd_broadcast))
+    app.add_handler(CommandHandler("revenue",    cmd_revenue))
+    app.add_handler(CommandHandler("export",     cmd_export))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
