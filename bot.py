@@ -470,18 +470,16 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status = f"🎁 Бесплатных анализов: *{free_left}* из {FREE_LIMIT}"
 
     text = (
-        f"👋 Привет, *{user.first_name}*!\n\n"
-        f"🤖 Я — *BetMind Bot*\n"
-        f"Профессиональный анализ матчей с прогнозами.\n\n"
-        f"🔧 *Бот находится в разработке*\n"
-        f"Запуск со дня на день — следи за обновлениями!\n\n"
-        f"Пока можешь попробовать анализ бесплатно 👇\n\n"
-        f"📌 *Примеры запросов:*\n"
-        f"• `Реал Мадрид — Барселона`\n"
-        f"• `NaVi vs G2 CS2`\n"
-        f"• `Team Spirit — Tundra Dota`\n\n"
-        f"{status}\n\n"
-        f"⚽🎮🐉 Футбол • CS2 • Dota 2"
+       f"👋 Привет, *{user.first_name}*!\n\n"
+    f"🤖 Я — *BetMind Bot*\n"
+    f"Профессиональный ИИ-анализ матчей с прогнозами.\n\n"
+    f"Напиши любой матч — получи полный разбор за 30 секунд 👇\n\n"
+    f"📌 *Примеры запросов:*\n"
+    f"• `Реал Мадрид — Барселона`\n"
+    f"• `NaVi vs G2 CS2`\n"
+    f"• `Team Spirit — Tundra Dota`\n\n"
+    f"{status}\n\n"
+    f"⚽🎮🐉 Футбол • CS2 • Dota 2"
     )
     keyboard = [
         [InlineKeyboardButton("💎 Тарифы и подписка", callback_data="show_plans")],
