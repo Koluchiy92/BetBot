@@ -1,72 +1,3 @@
-
-All projects
-Betting
-
-
-
-How can I help you today?
-
-
-Добавление статистики в прогнозы бота
-Last message 16 minutes ago
-Memory
-Only you
-Project memory will show here after a few chats.
-
-Instructions
-Add instructions to tailor Claude’s responses
-
-Files
-
-bot.py
-1,880 lines
-
-py
-
-
-
-requirements.txt
-5 lines
-
-txt
-
-
-
-GUIDE.md
-180 lines
-
-md
-
-
-
-database.py
-231 lines
-
-py
-
-
-
-scheduler.py
-1,029 lines
-
-py
-
-
-
-Dockerfile
-11 lines
-
-text
-
-
-
-.env.example
-23 lines
-
-text
-
-
-bot.py
 import os
 import logging
 import json
@@ -1946,4 +1877,3 @@ def main():
  
 if __name__ == "__main__":
     main()
- 
